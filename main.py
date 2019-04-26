@@ -1,50 +1,47 @@
-'''
-Ésta función permite hacer el Query a la DB en Firestore.
-Puede configurarse para hacer query a toda la collección
-o para hacer query a una parte determinada y mostrar el 
-estado activo o inactivo de la garantía.
-
-This function allows querying the Firestore DB.
-May be configured to querying all collection or
-just a part of it and show an active or inactive
-state of warranty.
-'''
-
-import firebase_admin
-import google.cloud
-from firebase_admin import credentials, firestore
+from google.cloud import firestore
 from datetime import datetime
+import json
 
-cred = credentials.Certificate("./ServiceAccountKey.json")
-app = firebase_admin.initialize_app(cred)
+DB = firestore.Client()
 
-db = firestore.client()
-print("Initializing...")
+def get_gtin(request):
+    request_json = request.get_json()
+    number = str(int(request_json["queryResult"]["parameters"]["number"][0]))
+    gtin = number
+    return query(gtin)
 
-#Query against all collection
-#docs = db.collection(u'dtcDB').limit(10).get()
+def query(gtin_number):
 
-#Query against a part of the collection
-docs = db.collection(u'dtcDB').where(u'GTIN', u'==', '10637').get()
+    db_ref = DB.collection(u'dtcDB')
+    docs = db_ref.get()
 
-#Print specific data
-for doc in docs:
-    dict = doc.to_dict()
-    wdates = dict.get("warrantyDate")
+    for doc in docs:
+        doc_dict = doc.to_dict()
+        gtin = doc_dict.get("GTIN").decode()
 
-    wdatet = datetime.strptime(wdates, "%Y/%m/%d")  #Transfor warrantyDate from strig to timestamp
-    wdate = wdatet.date()                           #Take just the date of warrantyDate
+        if gtin == gtin_number:
+            wdates = doc_dict.get("warrantyDate").decode()
 
-    nowt = datetime.now()                           #Timestam of today
-    datenow = nowt.date()                           #Take just the date of today
+            wdatet = datetime.strptime(wdates, "%Y/%m/%d")  
+            wdate = wdatet.date()                           
 
-    if wdate < datenow:                             #Date comparation
-        print("Your warranty is inactive")          #Inactive warrranty
-    elif wdate > datenow:
-        print("Your warranty is active")            #Active warrranty
-    elif wdate == datenow:
-        print("Your warranty ends today")           #Warranty ends today
+            nowt = datetime.now()                           
+            datenow = nowt.date()                           
 
-#Print all data
-#for doc in docs:
-    #print("Your id invoice is " '"{}" \nAnd your data is: {}'.format(doc.id, doc.to_dict()))
+            if wdate > datenow:                             
+                json_message = {}
+                json_message["fulfillmentText"] = "La garantía número " + str(gtin_number) + " está ACTIVA ¿te gustaría planificar una cita para ser atendido por nuestro personal calificado?"
+                return(json.dumps(json_message, ensure_ascii=False))
+
+            elif wdate < datenow:
+                json_message = {}
+                json_message["fulfillmentText"] = "La garantía número " + str(gtin_number) + " está INACTIVA"
+                return(json.dumps(json_message, ensure_ascii=False))
+
+            elif wdate == datenow:
+                json_message = {}
+                json_message["fulfillmentText"] = "La garantía número " + str(gtin_number) + " está ACTIVA y vence HOY ¿te gustaría planificar una cita para ser atendido por nuestro personal calificado?"
+                return(json.dumps(json_message, ensure_ascii=False))
+    json_message = {}
+    json_message["fulfillmentText"] = "Lo sentimos, la garantía " + str(gtin_number) + " no está en nuestra base de datos"
+    return(json.dumps(json_message, ensure_ascii=False))
